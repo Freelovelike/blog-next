@@ -22,6 +22,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: Dockerfile.bun
           push: true
           # 格式：ccr.ccs.tencentyun.com/命名空间/镜像名:latest
           tags: ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
