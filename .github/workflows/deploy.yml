@@ -1,0 +1,27 @@
+name: Docker Build to TCR
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to TCR
+        uses: docker/login-action@v3
+        with:
+          # 格式通常是 ccr.ccs.tencentyun.com
+          registry: ccr.ccs.tencentyun.com 
+          username: "100020847423" # 注意：不是手机号，是腾讯云主账号ID
+          password: ${{ secrets.TCR_PASSWORD }} # 你在“访问凭证”设置的密码
+
+      - name: Build and Push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # 格式：ccr.ccs.tencentyun.com/命名空间/镜像名:latest
+          tags: ccr.ccs.tencentyun.com/my-project/blog-next:latest
