@@ -16,39 +16,34 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           script: |
-            # 1. 登录腾讯云 TCR (确保你有 secrets.TCR_PASSWORD)
             echo "${{ secrets.TCR_PASSWORD }}" | docker login ccr.ccs.tencentyun.com --username 100020847423 --password-stdin
             
-            # 2. 等待云端构建完成 (Next.js 项目通常 2-4 分钟)
-            echo "Waiting for Tencent Cloud to finish building the image..."
-            
-            # 循环尝试拉取，直到成功（比单纯 sleep 更智能）
-            MAX_RETRIES=10
+            # 1. 记录当前正在运行的镜像 ID (如果没有则为空)
+            OLD_IMAGE_ID=$(docker images -q ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest)
+            echo "Current Image ID: $OLD_IMAGE_ID"
+
+            MAX_RETRIES=15  # 增加重试次数，Next.js 配合海外构建可能需要 3-7 分钟
             COUNT=0
             while [ $COUNT -lt $MAX_RETRIES ]; do
-              if docker pull ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest; then
-                echo "Successfully pulled the latest image!"
+              # 强制拉取最新镜像
+              docker pull ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
+              
+              # 获取刚拉取到的镜像 ID
+              NEW_IMAGE_ID=$(docker images -q ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest)
+              
+              # 对比：如果新旧 ID 不同，说明真正拉到了更新
+              if [ "$NEW_IMAGE_ID" != "$OLD_IMAGE_ID" ]; then
+                echo "Successfully pulled a NEW image! ID: $NEW_IMAGE_ID"
                 break
               else
                 COUNT=$((COUNT+1))
-                echo "Image not ready yet, waiting 30s... (Attempt $COUNT/$MAX_RETRIES)"
+                echo "Pull result: Image ID hasn't changed yet. Waiting 30s... ($COUNT/$MAX_RETRIES)"
                 sleep 30
-              fi
-              
-              if [ $COUNT -eq $MAX_RETRIES ]; then
-                echo "Error: Build timed out on Tencent Cloud."
-                exit 1
               fi
             done
             
-            # 3. 重启容器
+            # 2. 只有 ID 变了或者原本就没有镜像时才重启
             docker stop blog || true
             docker rm blog || true
-            docker run -d \
-              --name blog \
-              -p 8081:8081 \
-              --restart unless-stopped \
-              ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
-            
-            # 4. 清理旧镜像
+            docker run -d --name blog -p 8081:8081 --restart unless-stopped ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
             docker image prune -f
