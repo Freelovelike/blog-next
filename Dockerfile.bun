@@ -8,10 +8,12 @@ FROM oven/bun:1 AS base
 
 WORKDIR /app
 
-# Install dependencies with bun
+# Install dependencies with bun (cached layer)
 FROM base AS deps
 COPY package.json bun.lock* ./
-RUN bun install --no-save --frozen-lockfile
+# 使用 BuildKit 缓存挂载来缓存 bun 的全局缓存
+RUN --mount=type=cache,target=/root/.bun/install/cache \
+    bun install --frozen-lockfile
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -24,7 +26,9 @@ COPY . .
 # Uncomment the following line in case you want to disable telemetry during the build.
 # ENV NEXT_TELEMETRY_DISABLED=1
 
-RUN bun run build
+# 使用 BuildKit 缓存挂载来缓存 Next.js 构建缓存
+RUN --mount=type=cache,target=/app/.next/cache \
+    bun run build
 
 # Production image, copy all the files and run next
 FROM oven/bun:1-alpine AS runner

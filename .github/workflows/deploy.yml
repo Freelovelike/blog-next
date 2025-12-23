@@ -29,7 +29,12 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             cd ~/app/blog
+            
+            # 启用 BuildKit 并使用缓存构建
+            export DOCKER_BUILDKIT=1
+            export COMPOSE_DOCKER_CLI_BUILD=1
+            
             docker compose down
-            docker compose build --no-cache
+            docker compose build
             docker compose up -d
             docker image prune -f
