@@ -1,15 +1,48 @@
-name: Remote Deploy (Tencent TCR Managed)
+name: Intelligent Remote Deploy
 
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  deploy:
+  wait-for-tcr-build:
     runs-on: ubuntu-latest
-    # 注意：这里不再需要 build 任务，也不需要 checkout 代码
     steps:
-      - name: Wait and Deploy via SSH
+      - name: Wait for Image Digest Change
+        run: |
+          # 1. 登录 TCR 获取查询权限
+          echo "${{ secrets.TCR_PASSWORD }}" | docker login ccr.ccs.tencentyun.com --username 100020847423 --password-stdin
+          
+          IMAGE="ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest"
+          
+          # 2. 获取当前的镜像指纹 (Digest)
+          # 注意：这里查的是云端的指纹
+          INITIAL_DIGEST=$(docker manifest inspect $IMAGE -v | jq -r '.Descriptor.digest // .[0].Descriptor.digest')
+          echo "Initial Digest: $INITIAL_DIGEST"
+          
+          # 3. 循环检查，直到指纹发生变化
+          echo "Watching for image update on Tencent Cloud..."
+          MAX_RETRIES=20
+          for i in $(seq 1 $MAX_RETRIES); do
+            NEW_DIGEST=$(docker manifest inspect $IMAGE -v | jq -r '.Descriptor.digest // .[0].Descriptor.digest')
+            
+            if [ "$NEW_DIGEST" != "$INITIAL_DIGEST" ]; then
+              echo "✅ Detected new image! New Digest: $NEW_DIGEST"
+              exit 0
+            fi
+            
+            echo "🕒 No update yet (Attempt $i/$MAX_RETRIES). Waiting 30s..."
+            sleep 30
+          done
+          
+          echo "❌ Timeout: Tencent Cloud build took too long."
+          exit 1
+
+  deploy:
+    needs: wait-for-tcr-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH Deploy
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -17,32 +50,8 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           script: |
             echo "${{ secrets.TCR_PASSWORD }}" | docker login ccr.ccs.tencentyun.com --username 100020847423 --password-stdin
-            
-            # 1. 记录当前正在运行的镜像 ID (如果没有则为空)
-            OLD_IMAGE_ID=$(docker images -q ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest)
-            echo "Current Image ID: $OLD_IMAGE_ID"
-
-            MAX_RETRIES=15  # 增加重试次数，Next.js 配合海外构建可能需要 3-7 分钟
-            COUNT=0
-            while [ $COUNT -lt $MAX_RETRIES ]; do
-              # 强制拉取最新镜像
-              docker pull ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
-              
-              # 获取刚拉取到的镜像 ID
-              NEW_IMAGE_ID=$(docker images -q ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest)
-              
-              # 对比：如果新旧 ID 不同，说明真正拉到了更新
-              if [ "$NEW_IMAGE_ID" != "$OLD_IMAGE_ID" ]; then
-                echo "Successfully pulled a NEW image! ID: $NEW_IMAGE_ID"
-                break
-              else
-                COUNT=$((COUNT+1))
-                echo "Pull result: Image ID hasn't changed yet. Waiting 30s... ($COUNT/$MAX_RETRIES)"
-                sleep 30
-              fi
-            done
-            
-            # 2. 只有 ID 变了或者原本就没有镜像时才重启
+            cd ~/app/blog
+            docker pull ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
             docker stop blog || true
             docker rm blog || true
             docker run -d --name blog -p 8081:8081 --restart unless-stopped ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
