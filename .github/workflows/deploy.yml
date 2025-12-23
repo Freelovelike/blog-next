@@ -6,7 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: freelovelike/blog-next
 
 jobs:
   build:
@@ -48,13 +48,14 @@ jobs:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
+          envs: GHCR_TOKEN
           script: |
             # 登录 GitHub Container Registry
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u freelovelike --password-stdin
             
             # 拉取最新镜像并重启
-            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker pull ghcr.io/freelovelike/blog-next:latest
             docker stop blog || true
             docker rm blog || true
-            docker run -d --name blog -p 8081:8081 --restart unless-stopped ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            docker run -d --name blog -p 8081:8081 --restart unless-stopped ghcr.io/freelovelike/blog-next:latest
             docker image prune -f
