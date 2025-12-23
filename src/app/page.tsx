@@ -54,10 +54,10 @@ export default function Home() {
         {/* CTA Button */}
         <div className="flex gap-4">
           <a
-            href="#"
+            href="/blog"
             className="group relative inline-flex items-center justify-center gap-2 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 px-8 py-3 text-white font-medium transition-all duration-300 hover:shadow-lg hover:shadow-purple-500/30 hover:-translate-y-0.5"
           >
-            <span>开始探索</span>
+            <span>浏览博客</span>
             <svg className="w-4 h-4 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
             </svg>
