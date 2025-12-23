@@ -1,61 +1,54 @@
-name: Build and Deploy
+name: Remote Deploy (Tencent TCR Managed)
 
 on:
   push:
     branches: [ "main" ]
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: freelovelike/blog-next
-
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and Push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: Dockerfile.bun
-          push: true
-          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   deploy:
     runs-on: ubuntu-latest
-    needs: build
+    # 注意：这里不再需要 build 任务，也不需要 checkout 代码
     steps:
-      - name: Deploy to Server
+      - name: Wait and Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
-          envs: GHCR_TOKEN
           script: |
-            # 登录 GitHub Container Registry
-            echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io -u freelovelike --password-stdin
+            # 1. 登录腾讯云 TCR (确保你有 secrets.TCR_PASSWORD)
+            echo "${{ secrets.TCR_PASSWORD }}" | docker login ccr.ccs.tencentyun.com --username 100020847423 --password-stdin
             
-            # 拉取最新镜像并重启
-            docker pull ghcr.io/freelovelike/blog-next:latest
+            # 2. 等待云端构建完成 (Next.js 项目通常 2-4 分钟)
+            echo "Waiting for Tencent Cloud to finish building the image..."
+            
+            # 循环尝试拉取，直到成功（比单纯 sleep 更智能）
+            MAX_RETRIES=10
+            COUNT=0
+            while [ $COUNT -lt $MAX_RETRIES ]; do
+              if docker pull ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest; then
+                echo "Successfully pulled the latest image!"
+                break
+              else
+                COUNT=$((COUNT+1))
+                echo "Image not ready yet, waiting 30s... (Attempt $COUNT/$MAX_RETRIES)"
+                sleep 30
+              fi
+              
+              if [ $COUNT -eq $MAX_RETRIES ]; then
+                echo "Error: Build timed out on Tencent Cloud."
+                exit 1
+              fi
+            done
+            
+            # 3. 重启容器
             docker stop blog || true
             docker rm blog || true
-            docker run -d --name blog -p 8081:8081 --restart unless-stopped ghcr.io/freelovelike/blog-next:latest
+            docker run -d \
+              --name blog \
+              -p 8081:8081 \
+              --restart unless-stopped \
+              ccr.ccs.tencentyun.com/my-project20010616/blog-next:latest
+            
+            # 4. 清理旧镜像
             docker image prune -f
